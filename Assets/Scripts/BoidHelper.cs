@@ -14,7 +14,8 @@ public static class BoidHelper {
         float goldenRatio = (1 + Mathf.Sqrt (5)) / 2;
         float angleIncrement = Mathf.PI * 2 * goldenRatio;
 
-        for (int i = 0; i < numViewDirections; i++) {
+        for (int i = 0; i < numViewDirections; i++) 
+        {
             float t = (float) i / numViewDirections;
             float inclination = Mathf.Acos (1 - 2 * t);
             float azimuth = angleIncrement * i;

@@ -5,6 +5,7 @@ using Unity.Burst;
 using Unity.Jobs;
 using UnityEngine.Jobs;
 using Unity.Collections;
+using System;
 
 [BurstCompile]
 public class BoidsManagerJobsGPU : MonoBehaviour
@@ -26,16 +27,23 @@ public class BoidsManagerJobsGPU : MonoBehaviour
     public Mesh mesh;
     public Material mat;
 
-    public Vector3 scale;
-    public Vector3 angle;
+    public float3 scale;
+    public float3 angle;
+    public float3 bounds;
+    public float cellSize = 2f;
 
     CheckBoidsForJob checkBoidsJob;
+    GetRayCastDirections getRaycastDir;
+    NativeArray<float3> raycastDirections;
+    NativeArray<HashAndIndex> hashAndIndices;
 
     void Awake()
     {
         boidConstantData = new NativeArray<BoidConstantData>(spawnCount, Allocator.Persistent);
         changedData = new NativeArray<int>(spawnCount, Allocator.Persistent);
         _nativeMatrices = new NativeArray<Matrix4x4>(spawnCount, Allocator.Persistent);
+        raycastDirections = new NativeArray<float3>(100, Allocator.Persistent);
+        hashAndIndices = new NativeArray<HashAndIndex>(spawnCount, Allocator.Persistent);
 
         float startSpeed = (boidSettings.minSpeed + boidSettings.maxSpeed) / 2;
 
@@ -81,18 +89,31 @@ public class BoidsManagerJobsGPU : MonoBehaviour
             boidConstantData = boidConstantData,
             boidSettingsData = boidSettingsData,
             Matrices = _nativeMatrices,
-            scale = (float3)scale,
-            angle = (float3)angle
+            scale = scale,
+            angle = angle
+        };
+
+        float goldenRatio = (1 + Mathf.Sqrt(5)) / 2;
+        float angleIncrement = Mathf.PI * 2 * goldenRatio;
+
+        getRaycastDir = new GetRayCastDirections
+        {
+            numViewDirections = 100,
+            angleIncrement = angleIncrement,
+            directions = raycastDirections
         };
 
         _rp = new RenderParams(mat);
     }
-    private void OnDisable()
+    private void OnDestroy()
     {
         boidConstantData.Dispose();
         changedData.Dispose();
         _nativeMatrices.Dispose();
+        raycastDirections.Dispose();
+        hashAndIndices.Dispose();
     }
+
     void Update()
     {
         if (!doneSpawning) return;
@@ -138,17 +159,49 @@ public class BoidsManagerJobsGPU : MonoBehaviour
 
         uint seed = (uint)UnityEngine.Random.Range(1, 100000);
 
-        checkBoidsJob.boidData = boidData;
-        checkBoidsJob.canSteer = canSteer;
-        checkBoidsJob.seed = seed;
-        checkBoidsJob.Schedule(spawnCount,64).Complete();
 
 
-        updateBoids.deltaTime = Time.deltaTime;
-        updateBoids.Schedule(spawnCount, 64).Complete();
+        HashParticlesJob hashJob = new HashParticlesJob
+        {
+            boids = boidConstantData,
+            cellSize = cellSize,
+            hashAndIndices = hashAndIndices
+        };
+        hashJob.Schedule(spawnCount, 64).Complete();
+
+        SortHashCodesJob sortJob = new SortHashCodesJob
+        {
+            hashAndIndices = hashAndIndices
+        };
+        sortJob.Schedule().Complete();
+
+        //var queryJob = new QueryJob
+        //{
+        //    boidData = boidData,
+        //    hashAndIndices = hashAndIndices,
+        //    cellSize = cellSize,
+        //    canSteer = canSteer,
+        //    wanderJitter = boidSettings.wanderJitter,
+        //    perceptionRadius = boidSettings.perceptionRadius,
+        //    avoidanceRadius = boidSettings.avoidanceRadius,
+        //    seed = seed,
+        //    boidConstantData = boidConstantData
+        //};
+
+        //queryJob.Schedule(spawnCount,64).Complete();
 
 
-        Graphics.RenderMeshInstanced(_rp, mesh, 0, _nativeMatrices);
+        //checkBoidsJob.boidData = boidData;
+        //checkBoidsJob.canSteer = canSteer;
+        //checkBoidsJob.seed = seed;
+        //checkBoidsJob.Schedule(spawnCount, 64).Complete();
+
+
+        //updateBoids.deltaTime = Time.deltaTime;
+        //updateBoids.Schedule(spawnCount, 64).Complete();
+
+
+        //Graphics.RenderMeshInstanced(_rp, mesh, 0, _nativeMatrices);
         boidData.Dispose();
     }
     bool IsHeadingForCollision(BoidConstantData currentBoid)
@@ -166,7 +219,8 @@ public class BoidsManagerJobsGPU : MonoBehaviour
     {
         Vector3[] rayDirections = BoidHelper.directions;
 
-        Vector3 angle = math.Euler(currentBoid.rotation);
+        //getRaycastDir.Schedule(100, 64).Complete();
+
         for (int i = 0; i < rayDirections.Length; i++)
         {
             Vector3 dir = (Quaternion)currentBoid.rotation * rayDirections[i];
@@ -179,7 +233,80 @@ public class BoidsManagerJobsGPU : MonoBehaviour
 
         return currentBoid.forward;
     }
+    public Vector3[] GenerateConeDirections(Vector3 forward, float coneAngle, int rayCount)
+    {
+        Vector3[] directions = new Vector3[rayCount];
+        int index = 1;
+
+        // Asegurarse de que el forward esté normalizado
+        forward.Normalize();
+
+        // Convertir el ángulo del cono a radianes
+        float coneAngleRad = Mathf.Deg2Rad * coneAngle;
+
+        // Matriz de rotación para orientar el cono hacia el forward
+        Quaternion rotation = Quaternion.LookRotation(forward);
+
+        // Rayo central (directamente en la dirección del forward)
+        directions[0] = (forward);
+
+        // Número de anillos en el cono
+        int rings = Mathf.CeilToInt(Mathf.Sqrt(rayCount));
+
+        for (int ring = 1; ring <= rings; ring++)
+        {
+            // Calcular el radio del anillo basado en la progresión hacia el borde del cono
+            float ringRadius = Mathf.Sin(coneAngleRad / 2f) * (ring / (float)rings);
+
+            // Número de rayos en el anillo (proporcional al radio)
+            int raysInRing = Mathf.CeilToInt(2 * Mathf.PI * ringRadius * rayCount / rings);
+
+            for (int i = 0; i < raysInRing; i++)
+            {
+                // Ángulo del rayo dentro del anillo
+                float theta = (i / (float)raysInRing) * 2 * Mathf.PI;
+
+                // Coordenadas cartesianas del anillo (en espacio local)
+                float x = Mathf.Cos(theta) * ringRadius;
+                float y = Mathf.Sin(theta) * ringRadius;
+
+                // Calcular z (profundidad) usando el teorema de Pitágoras
+                float z = Mathf.Sqrt(1 - x * x - y * y);
+
+                // Dirección en espacio local
+                Vector3 localDirection = new Vector3(x, y, z);
+
+                // Rotar hacia el forward usando la matriz de rotación
+                Vector3 worldDirection = rotation * localDirection;
+
+                directions[i] = worldDirection;
+                index++;
+            }
+        }
+
+        return directions;
+    }
+
+    //void GetDirectionsRaycast(NativeArray<float3> directions) 
+    //{
+    //    float goldenRatio = (1 + Mathf.Sqrt (5)) / 2;
+    //    float angleIncrement = Mathf.PI * 2 * goldenRatio;
+
+    //    for (int i = 0; i < numViewDirections; i++) 
+    //    {
+    //        float t = (float) i / numViewDirections;
+    //        float inclination = Mathf.Acos (1 - 2 * t);
+    //        float azimuth = angleIncrement * i;
+
+    //        float x = Mathf.Sin (inclination) * Mathf.Cos (azimuth);
+    //        float y = Mathf.Sin (inclination) * Mathf.Sin (azimuth);
+    //        float z = Mathf.Cos (inclination);
+    //        directions[i] = new Vector3 (x, y, z);
+    //    }
+    //}
+
 }
+
 [BurstCompile]
 public struct CheckBoidsForJob : IJobParallelFor
 {
@@ -252,7 +379,25 @@ public struct CheckBoidsForJob : IJobParallelFor
         boidConstantData[index] = currentBoidConstantData;
     }
 }
+[BurstCompile]
+struct GetRayCastDirections : IJobParallelFor
+{
+    [ReadOnly] public int numViewDirections;
+    [ReadOnly] public float angleIncrement;
+    [WriteOnly] public NativeArray<float3> directions;
 
+    public void Execute(int index)
+    {
+        float t = (float)index / numViewDirections;
+        float inclination = Mathf.Acos(1 - 2 * t);
+        float azimuth = angleIncrement * index;
+
+        float x = Mathf.Sin(inclination) * Mathf.Cos(azimuth);
+        float y = Mathf.Sin(inclination) * Mathf.Sin(azimuth);
+        float z = Mathf.Cos(inclination);
+        directions[index] = new Vector3(x, y, z);
+    }
+}
 [BurstCompile]
 struct UpdateBoidsJobGPU : IJobParallelFor
 {
@@ -327,5 +472,186 @@ struct UpdateBoidsJobGPU : IJobParallelFor
         }
 
         return v; // Devuelve el vector sin cambios si está dentro del rango
+    }
+}
+[BurstCompile]
+struct HashParticlesJob : IJobParallelFor
+{
+    [ReadOnly] public NativeArray<BoidConstantData> boids;
+    [ReadOnly] public float cellSize;
+
+    [WriteOnly]public NativeArray<HashAndIndex> hashAndIndices;
+
+
+    public void Execute(int index)
+    {
+        BoidConstantData boid = boids[index];
+        int hash = Hash(GridPosition(boid.position, cellSize));
+
+        hashAndIndices[index] = new HashAndIndex { Hash = hash, Index = index };
+    }
+    public int Hash(int3 gridPos)
+    {
+        unchecked
+        {
+            return gridPos.x * 73856093 ^ gridPos.y * 19349663 ^ gridPos.z * 83492791;
+        }
+    }
+
+    int3 GridPosition(float3 position, float cellSize)
+    {
+        return new int3(math.floor(position / cellSize));
+    }
+}
+[BurstCompile]
+struct SortHashCodesJob : IJob
+{
+    public NativeArray<HashAndIndex> hashAndIndices;
+
+    public void Execute()
+    {
+        hashAndIndices.Sort();
+    }
+}
+[BurstCompile]
+struct QueryJob : IJobParallelFor
+{
+    [ReadOnly] public NativeArray<BoidCurrentData> boidData;
+    [ReadOnly] public NativeArray<HashAndIndex> hashAndIndices;
+    [ReadOnly] public float cellSize;
+    [ReadOnly] public bool canSteer;
+    [ReadOnly] public float wanderJitter;
+    [ReadOnly] public float perceptionRadius;
+    [ReadOnly] public float avoidanceRadius;
+    [ReadOnly] public uint seed;
+
+    public NativeArray<BoidConstantData> boidConstantData;
+
+    public void Execute(int index)
+    {
+        // Crea un generador de números aleatorios con un estado único por índice
+        Unity.Mathematics.Random random = new Unity.Mathematics.Random(seed + (uint)index);
+
+        bool changedDirByBoid = false;
+        BoidCurrentData currentBoid = boidData[index];
+        BoidConstantData currentBoidConstantData = boidConstantData[index];
+
+        int numPercivedFlocks = 0;
+        float3 avgDir = float3.zero;
+        float3 centerflocks = float3.zero;
+        float3 avgSeparationDir = float3.zero;
+
+        float radiusSquared = perceptionRadius * perceptionRadius;
+        int3 minGridPos = GridPosition(currentBoid.position - perceptionRadius, cellSize);
+        int3 maxGridPos = GridPosition(currentBoid.position + perceptionRadius, cellSize);
+
+        for (int x = minGridPos.x; x <= maxGridPos.x; x++)
+        {
+            for (int y = minGridPos.y; y <= maxGridPos.y; y++)
+            {
+                for (int z = minGridPos.z; z <= maxGridPos.z; z++)
+                {
+                    int3 gridPos = new(x, y, z);
+                    int hash = Hash(gridPos);
+
+                    int startIndex = BinarySearchFirst(hashAndIndices, hash);
+
+                    if (startIndex < 0) continue;
+
+                    for (int i = startIndex; i < hashAndIndices.Length && hashAndIndices[i].Hash == hash; i++)
+                    {
+                        int particleIndex = hashAndIndices[i].Index;
+                        BoidCurrentData otherBoid = boidData[particleIndex];
+                        float3 awayFromNeighbor = otherBoid.position - currentBoid.position;
+                        float distanceFromNeightBor = math.length(awayFromNeighbor);
+
+                        if (distanceFromNeightBor < radiusSquared)
+                        {
+                            numPercivedFlocks += 1;
+                            avgDir += otherBoid.direction;
+                            centerflocks += otherBoid.position;
+                            if (canSteer)
+                            {
+                                if ((otherBoid.globalDir.x != 0) && (otherBoid.globalDir.y != 0) && (otherBoid.globalDir.z != 0))
+                                {
+                                    currentBoidConstantData.globalDirConstant = otherBoid.globalDir;
+                                    changedDirByBoid = true;
+                                }
+                            }
+
+                            if (distanceFromNeightBor < avoidanceRadius * avoidanceRadius)
+                            {
+                                avgSeparationDir -= awayFromNeighbor / distanceFromNeightBor;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (canSteer)
+        {
+            if (!changedDirByBoid)
+            {
+                float groupDirJitter = wanderJitter;
+                currentBoidConstantData.globalDirConstant = new float3(random.NextFloat(-groupDirJitter, groupDirJitter), random.NextFloat(-groupDirJitter, groupDirJitter), random.NextFloat(-groupDirJitter, groupDirJitter));
+            }
+        }
+        currentBoidConstantData.numPerceivedFlockmates = numPercivedFlocks;
+        currentBoidConstantData.avgFlockDirection = avgDir;
+        currentBoidConstantData.centreOfFlockmates = centerflocks;
+        currentBoidConstantData.avgSeparationDirection = avgSeparationDir;
+
+        boidConstantData[index] = currentBoidConstantData;
+    }
+
+    int BinarySearchFirst(NativeArray<HashAndIndex> array, int hash)
+    {
+        int left = 0;
+        int right = array.Length - 1;
+        int result = -1;
+
+        while (left <= right)
+        {
+            int mid = (left + right) / 2;
+            int midHash = array[mid].Hash;
+
+            if (midHash == hash)
+            {
+                result = mid;
+                right = mid - 1;
+            }
+            else if (midHash < hash)
+            {
+                left = mid + 1;
+            }
+            else
+            {
+                right = mid - 1;
+            }
+        }
+        return result;
+    }
+    int Hash(int3 gridPos)
+    {
+        unchecked
+        {
+            return gridPos.x * 73856093 ^ gridPos.y * 19349663 ^ gridPos.z * 83492791;
+        }
+    }
+
+    int3 GridPosition(float3 position, float cellSize)
+    {
+        return new int3(math.floor(position / cellSize));
+    }
+}
+
+public struct HashAndIndex : IComparable<HashAndIndex>
+{
+    public int Hash;
+    public int Index;
+
+    public int CompareTo(HashAndIndex other)
+    {
+        return Hash.CompareTo(other.Hash);
     }
 }
