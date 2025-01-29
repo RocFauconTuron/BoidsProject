@@ -32,9 +32,6 @@ public class BoidsManagerJobsGPU : MonoBehaviour
     public float3 bounds;
     public float cellSize = 2f;
 
-    CheckBoidsForJob checkBoidsJob;
-    GetRayCastDirections getRaycastDir;
-    NativeArray<float3> raycastDirections;
     NativeArray<HashAndIndex> hashAndIndices;
 
     void Awake()
@@ -42,7 +39,6 @@ public class BoidsManagerJobsGPU : MonoBehaviour
         boidConstantData = new NativeArray<BoidConstantData>(spawnCount, Allocator.Persistent);
         changedData = new NativeArray<int>(spawnCount, Allocator.Persistent);
         _nativeMatrices = new NativeArray<Matrix4x4>(spawnCount, Allocator.Persistent);
-        raycastDirections = new NativeArray<float3>(100, Allocator.Persistent);
         hashAndIndices = new NativeArray<HashAndIndex>(spawnCount, Allocator.Persistent);
 
         float startSpeed = (boidSettings.minSpeed + boidSettings.maxSpeed) / 2;
@@ -57,6 +53,14 @@ public class BoidsManagerJobsGPU : MonoBehaviour
             currentBoidConstantData.position = pos;
             currentBoidConstantData.forward = forward;
             currentBoidConstantData.velocity = forward * startSpeed;
+            currentBoidConstantData.avgFlockDirection = float3.zero;
+            currentBoidConstantData.avgSeparationDirection = float3.zero;
+            currentBoidConstantData.centreOfFlockmates = float3.zero;
+            currentBoidConstantData.numPerceivedFlockmates = 0;
+            currentBoidConstantData.globalDirConstant = float3.zero;
+            currentBoidConstantData.collisionAvoidDir = float3.zero;
+            currentBoidConstantData.hasFoundCollision = false;
+            currentBoidConstantData.rotation = quaternion.identity;
 
             boidConstantData[i] = currentBoidConstantData;
         }
@@ -75,14 +79,6 @@ public class BoidsManagerJobsGPU : MonoBehaviour
             steerSpeed = boidSettings.steerSpeed,
             avoidCollisionWeight = boidSettings.avoidCollisionWeight
         };
-        checkBoidsJob = new CheckBoidsForJob()
-        {
-            numBoids = spawnCount,
-            wanderJitter = boidSettings.wanderJitter,
-            perceptionRadius = boidSettings.perceptionRadius,
-            avoidanceRadius = boidSettings.avoidanceRadius,
-            boidConstantData = boidConstantData
-        };
 
         updateBoids = new UpdateBoidsJobGPU
         {
@@ -96,13 +92,6 @@ public class BoidsManagerJobsGPU : MonoBehaviour
         float goldenRatio = (1 + Mathf.Sqrt(5)) / 2;
         float angleIncrement = Mathf.PI * 2 * goldenRatio;
 
-        getRaycastDir = new GetRayCastDirections
-        {
-            numViewDirections = 100,
-            angleIncrement = angleIncrement,
-            directions = raycastDirections
-        };
-
         _rp = new RenderParams(mat);
     }
     private void OnDestroy()
@@ -110,7 +99,6 @@ public class BoidsManagerJobsGPU : MonoBehaviour
         boidConstantData.Dispose();
         changedData.Dispose();
         _nativeMatrices.Dispose();
-        raycastDirections.Dispose();
         hashAndIndices.Dispose();
     }
 
@@ -175,33 +163,24 @@ public class BoidsManagerJobsGPU : MonoBehaviour
         };
         sortJob.Schedule().Complete();
 
-        //var queryJob = new QueryJob
-        //{
-        //    boidData = boidData,
-        //    hashAndIndices = hashAndIndices,
-        //    cellSize = cellSize,
-        //    canSteer = canSteer,
-        //    wanderJitter = boidSettings.wanderJitter,
-        //    perceptionRadius = boidSettings.perceptionRadius,
-        //    avoidanceRadius = boidSettings.avoidanceRadius,
-        //    seed = seed,
-        //    boidConstantData = boidConstantData
-        //};
+        var queryJob = new QueryJob
+        {
+            boidData = boidData,
+            hashAndIndices = hashAndIndices,
+            cellSize = cellSize,
+            canSteer = canSteer,
+            wanderJitter = boidSettings.wanderJitter,
+            perceptionRadius = boidSettings.perceptionRadius,
+            avoidanceRadius = boidSettings.avoidanceRadius,
+            seed = seed,
+            boidConstantData = boidConstantData
+        };
+        queryJob.Schedule(spawnCount, 64).Complete();
 
-        //queryJob.Schedule(spawnCount,64).Complete();
+        updateBoids.deltaTime = Time.deltaTime;
+        updateBoids.Schedule(spawnCount, 64).Complete();
+        Graphics.RenderMeshInstanced(_rp, mesh, 0, _nativeMatrices);
 
-
-        //checkBoidsJob.boidData = boidData;
-        //checkBoidsJob.canSteer = canSteer;
-        //checkBoidsJob.seed = seed;
-        //checkBoidsJob.Schedule(spawnCount, 64).Complete();
-
-
-        //updateBoids.deltaTime = Time.deltaTime;
-        //updateBoids.Schedule(spawnCount, 64).Complete();
-
-
-        //Graphics.RenderMeshInstanced(_rp, mesh, 0, _nativeMatrices);
         boidData.Dispose();
     }
     bool IsHeadingForCollision(BoidConstantData currentBoid)
@@ -218,8 +197,6 @@ public class BoidsManagerJobsGPU : MonoBehaviour
     float3 ObstacleRays(BoidConstantData currentBoid)
     {
         Vector3[] rayDirections = BoidHelper.directions;
-
-        //getRaycastDir.Schedule(100, 64).Complete();
 
         for (int i = 0; i < rayDirections.Length; i++)
         {
@@ -286,99 +263,8 @@ public class BoidsManagerJobsGPU : MonoBehaviour
 
         return directions;
     }
-
-    //void GetDirectionsRaycast(NativeArray<float3> directions) 
-    //{
-    //    float goldenRatio = (1 + Mathf.Sqrt (5)) / 2;
-    //    float angleIncrement = Mathf.PI * 2 * goldenRatio;
-
-    //    for (int i = 0; i < numViewDirections; i++) 
-    //    {
-    //        float t = (float) i / numViewDirections;
-    //        float inclination = Mathf.Acos (1 - 2 * t);
-    //        float azimuth = angleIncrement * i;
-
-    //        float x = Mathf.Sin (inclination) * Mathf.Cos (azimuth);
-    //        float y = Mathf.Sin (inclination) * Mathf.Sin (azimuth);
-    //        float z = Mathf.Cos (inclination);
-    //        directions[i] = new Vector3 (x, y, z);
-    //    }
-    //}
-
 }
 
-[BurstCompile]
-public struct CheckBoidsForJob : IJobParallelFor
-{
-    [ReadOnly] public bool canSteer;
-    [ReadOnly] public int numBoids;
-    [ReadOnly] public float wanderJitter;
-    [ReadOnly] public float perceptionRadius;
-    [ReadOnly] public float avoidanceRadius;
-    [ReadOnly] public uint seed;
-
-    [ReadOnly]public NativeArray<BoidCurrentData> boidData; // Solo lectura para evitar conflictos
-    public NativeArray<BoidConstantData> boidConstantData;   // Escritura permitida en índice propio
-
-    public void Execute(int index)
-    {
-        // Crea un generador de números aleatorios con un estado único por índice
-        Unity.Mathematics.Random random = new Unity.Mathematics.Random(seed + (uint)index);
-
-        bool changedDirByBoid = false;
-        BoidCurrentData currentBoid = boidData[index];
-        BoidConstantData currentBoidConstantData = boidConstantData[index];
-        int numPercivedFlocks = 0;
-        float3 avgDir = float3.zero;
-        float3 centerflocks = float3.zero;
-        float3 avgSeparationDir = float3.zero;
-
-        for (int j = 0; j < numBoids; j++)
-        {
-            if (index != j)
-            {
-                BoidCurrentData otherBoid = boidData[j];
-                float3 awayFromNeighbor = otherBoid.position - currentBoid.position;
-                float distanceFromNeightBor = math.length(awayFromNeighbor);
-
-                if (distanceFromNeightBor < perceptionRadius * perceptionRadius)
-                {
-                    numPercivedFlocks += 1;
-                    avgDir += otherBoid.direction;
-                    centerflocks += otherBoid.position;
-                    if (canSteer)
-                    {
-                        if ((otherBoid.globalDir.x != 0) && (otherBoid.globalDir.y != 0) && (otherBoid.globalDir.z != 0))
-                        {
-                            currentBoidConstantData.globalDirConstant = otherBoid.globalDir;
-                            changedDirByBoid = true;
-                        }
-                    }
-
-                    if (distanceFromNeightBor < avoidanceRadius * avoidanceRadius)
-                    {
-                        avgSeparationDir -= awayFromNeighbor / distanceFromNeightBor;
-                    }
-                }
-            }
-        }
-
-        if (canSteer)
-        {
-            if (!changedDirByBoid)
-            {
-                float groupDirJitter = wanderJitter;
-                currentBoidConstantData.globalDirConstant = new float3(random.NextFloat(-groupDirJitter, groupDirJitter), random.NextFloat(-groupDirJitter, groupDirJitter), random.NextFloat(-groupDirJitter, groupDirJitter));
-            }
-        }
-        currentBoidConstantData.numPerceivedFlockmates = numPercivedFlocks;
-        currentBoidConstantData.avgFlockDirection = avgDir;
-        currentBoidConstantData.centreOfFlockmates = centerflocks;
-        currentBoidConstantData.avgSeparationDirection = avgSeparationDir;
-
-        boidConstantData[index] = currentBoidConstantData;
-    }
-}
 [BurstCompile]
 struct GetRayCastDirections : IJobParallelFor
 {
@@ -398,6 +284,7 @@ struct GetRayCastDirections : IJobParallelFor
         directions[index] = new Vector3(x, y, z);
     }
 }
+
 [BurstCompile]
 struct UpdateBoidsJobGPU : IJobParallelFor
 {
@@ -474,6 +361,7 @@ struct UpdateBoidsJobGPU : IJobParallelFor
         return v; // Devuelve el vector sin cambios si está dentro del rango
     }
 }
+
 [BurstCompile]
 struct HashParticlesJob : IJobParallelFor
 {
@@ -503,6 +391,7 @@ struct HashParticlesJob : IJobParallelFor
         return new int3(math.floor(position / cellSize));
     }
 }
+
 [BurstCompile]
 struct SortHashCodesJob : IJob
 {
@@ -513,6 +402,7 @@ struct SortHashCodesJob : IJob
         hashAndIndices.Sort();
     }
 }
+
 [BurstCompile]
 struct QueryJob : IJobParallelFor
 {
@@ -562,28 +452,33 @@ struct QueryJob : IJobParallelFor
                     {
                         int particleIndex = hashAndIndices[i].Index;
                         BoidCurrentData otherBoid = boidData[particleIndex];
-                        float3 awayFromNeighbor = otherBoid.position - currentBoid.position;
-                        float distanceFromNeightBor = math.length(awayFromNeighbor);
 
-                        if (distanceFromNeightBor < radiusSquared)
+                        if(particleIndex != index)
                         {
-                            numPercivedFlocks += 1;
-                            avgDir += otherBoid.direction;
-                            centerflocks += otherBoid.position;
-                            if (canSteer)
+                            float3 awayFromNeighbor = otherBoid.position - currentBoid.position;
+                            float distanceFromNeightBor = math.length(awayFromNeighbor);
+
+                            if (distanceFromNeightBor < radiusSquared)
                             {
-                                if ((otherBoid.globalDir.x != 0) && (otherBoid.globalDir.y != 0) && (otherBoid.globalDir.z != 0))
+                                numPercivedFlocks += 1;
+                                avgDir += otherBoid.direction;
+                                centerflocks += otherBoid.position;
+                                if (canSteer)
                                 {
-                                    currentBoidConstantData.globalDirConstant = otherBoid.globalDir;
-                                    changedDirByBoid = true;
+                                    if ((otherBoid.globalDir.x != 0) && (otherBoid.globalDir.y != 0) && (otherBoid.globalDir.z != 0))
+                                    {
+                                        currentBoidConstantData.globalDirConstant = otherBoid.globalDir;
+                                        changedDirByBoid = true;
+                                    }
+                                }
+
+                                if (distanceFromNeightBor < avoidanceRadius * avoidanceRadius)
+                                {
+                                    avgSeparationDir -= awayFromNeighbor / distanceFromNeightBor;
                                 }
                             }
-
-                            if (distanceFromNeightBor < avoidanceRadius * avoidanceRadius)
-                            {
-                                avgSeparationDir -= awayFromNeighbor / distanceFromNeightBor;
-                            }
                         }
+                        
                     }
                 }
             }
@@ -645,13 +540,6 @@ struct QueryJob : IJobParallelFor
     }
 }
 
-public struct HashAndIndex : IComparable<HashAndIndex>
-{
-    public int Hash;
-    public int Index;
 
-    public int CompareTo(HashAndIndex other)
-    {
-        return Hash.CompareTo(other.Hash);
-    }
-}
+
+

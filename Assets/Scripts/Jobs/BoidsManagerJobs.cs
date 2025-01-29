@@ -176,99 +176,75 @@ public class BoidsManagerJobs : MonoBehaviour
 }
 
 [BurstCompile]
-public struct CheckBoidsJob : IJob
+public struct CheckBoidsForJob : IJobParallelFor
 {
     [ReadOnly] public bool canSteer;
     [ReadOnly] public int numBoids;
     [ReadOnly] public float wanderJitter;
     [ReadOnly] public float perceptionRadius;
     [ReadOnly] public float avoidanceRadius;
-    [ReadOnly] uint seed;
+    [ReadOnly] public uint seed;
 
-    public NativeArray<BoidCurrentData> boidData;
-    public NativeArray<int> changedData;
-    public NativeArray<BoidConstantData> boidConstantData;
+    [ReadOnly] public NativeArray<BoidCurrentData> boidData; // Solo lectura para evitar conflictos
+    public NativeArray<BoidConstantData> boidConstantData;   // Escritura permitida en índice propio
 
-    public void Execute()
+    public void Execute(int index)
     {
-        for (int i = 0; i < numBoids; i++)
+        // Crea un generador de números aleatorios con un estado único por índice
+        Unity.Mathematics.Random random = new Unity.Mathematics.Random(seed + (uint)index);
+
+        bool changedDirByBoid = false;
+        BoidCurrentData currentBoid = boidData[index];
+        BoidConstantData currentBoidConstantData = boidConstantData[index];
+        int numPercivedFlocks = 0;
+        float3 avgDir = float3.zero;
+        float3 centerflocks = float3.zero;
+        float3 avgSeparationDir = float3.zero;
+
+        for (int j = 0; j < numBoids; j++)
         {
-            // Crea un generador de números aleatorios con un estado único por índice
-            Unity.Mathematics.Random random = new Unity.Mathematics.Random(seed + (uint)i);
-
-            bool hasChangedOtherGlobalDir = false;
-            BoidCurrentData currentBoid = boidData[i];
-            int changedBoids = 0;
-
-            if (canSteer)
+            if (index != j)
             {
-                float groupDirJitter = wanderJitter;
-                currentBoid.globalDir = new float3(random.NextFloat(-groupDirJitter, groupDirJitter), random.NextFloat(-groupDirJitter, groupDirJitter), random.NextFloat(-groupDirJitter, groupDirJitter));
-            }
+                BoidCurrentData otherBoid = boidData[j];
+                float3 awayFromNeighbor = otherBoid.position - currentBoid.position;
+                float distanceFromNeightBor = math.length(awayFromNeighbor);
 
-            for (int j = 0; j < numBoids; j++)
-            {
-                if (i != j)
+                if (distanceFromNeightBor < perceptionRadius * perceptionRadius)
                 {
-                    BoidCurrentData otherBoid = boidData[j];
-                    float3 awayFromNeighbor = otherBoid.position - currentBoid.position;
-                    float distanceFromNeightBor = math.length(awayFromNeighbor);
-
-                    if (distanceFromNeightBor < perceptionRadius * perceptionRadius)
+                    numPercivedFlocks += 1;
+                    avgDir += otherBoid.direction;
+                    centerflocks += otherBoid.position;
+                    if (canSteer)
                     {
-                        currentBoid.numNeightbors += 1;
-                        currentBoid.flockHeading += otherBoid.direction;
-                        currentBoid.flockCentre += otherBoid.position;
-                        if (canSteer)
+                        if ((otherBoid.globalDir.x != 0) && (otherBoid.globalDir.y != 0) && (otherBoid.globalDir.z != 0))
                         {
-                            if ((otherBoid.globalDir.x != 0) && (otherBoid.globalDir.y != 0) && (otherBoid.globalDir.z != 0))
-                            {
-                                currentBoid.globalDir = otherBoid.globalDir;
-                                if (hasChangedOtherGlobalDir)
-                                {
-                                    for (int z = 0; z < changedData.Length - 1; z++)
-                                    {
-                                        if (changedData[z] == 0) break;
-
-                                        BoidCurrentData boidChanged = boidData[changedData[z]];
-                                        boidChanged.globalDir = currentBoid.globalDir;
-                                        boidData[changedData[z]] = boidChanged;
-                                        changedData[z] = 0;
-                                        changedBoids = 0;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                hasChangedOtherGlobalDir = true;
-                                otherBoid.globalDir = currentBoid.globalDir;
-                                boidData[j] = otherBoid;
-                                changedData[changedBoids] = j;
-                                changedBoids++;
-                            }
+                            currentBoidConstantData.globalDirConstant = otherBoid.globalDir;
+                            changedDirByBoid = true;
                         }
+                    }
 
-                        if (distanceFromNeightBor < avoidanceRadius * avoidanceRadius)
-                        {
-                            currentBoid.flockSeparation -= awayFromNeighbor / distanceFromNeightBor;
-                        }
+                    if (distanceFromNeightBor < avoidanceRadius * avoidanceRadius)
+                    {
+                        avgSeparationDir -= awayFromNeighbor / distanceFromNeightBor;
                     }
                 }
             }
-            boidData[i] = currentBoid;
-
-            BoidConstantData currentBoidConstantData = boidConstantData[i];
-            currentBoidConstantData.avgFlockDirection = boidData[i].flockHeading;
-            currentBoidConstantData.centreOfFlockmates = boidData[i].flockCentre;
-            currentBoidConstantData.avgSeparationDirection = boidData[i].flockSeparation;
-            currentBoidConstantData.numPerceivedFlockmates = boidData[i].numNeightbors;
-            if (canSteer)
-            {
-                currentBoidConstantData.globalDirConstant = boidData[i].globalDir;
-            }
-            boidConstantData[i] = currentBoidConstantData;
         }
- 
+
+        if (canSteer)
+        {
+            if (!changedDirByBoid)
+            {
+                float groupDirJitter = wanderJitter;
+                currentBoidConstantData.globalDirConstant = new float3(random.NextFloat(-groupDirJitter, groupDirJitter), random.NextFloat(-groupDirJitter, groupDirJitter), random.NextFloat(-groupDirJitter, groupDirJitter));
+            }
+        }
+        currentBoidConstantData.numPerceivedFlockmates = numPercivedFlocks;
+        currentBoidConstantData.avgFlockDirection = avgDir;
+        currentBoidConstantData.centreOfFlockmates = centerflocks;
+        currentBoidConstantData.avgSeparationDirection = avgSeparationDir;
+
+        boidConstantData[index] = currentBoidConstantData;
     }
 }
 
@@ -340,43 +316,3 @@ struct UpdateBoidsJob : IJobParallelFor
     }
 }
 
-public struct BoidCurrentData
-{
-    public float3 position;
-    public float3 direction;
-    public float3 globalDir;
-
-    public float3 flockHeading;
-    public float3 flockCentre;
-    public float3 flockSeparation;
-    public int numNeightbors;
-}
-public struct BoidConstantData
-{
-    public float3 avgFlockDirection;
-    public float3 avgSeparationDirection;
-    public float3 centreOfFlockmates;
-    public int numPerceivedFlockmates;
-    public float3 globalDirConstant;
-    public float3 position;
-    public float3 forward;
-    public float3 collisionAvoidDir;
-    public bool hasFoundCollision;
-    public float3 velocity;
-    public quaternion rotation;
-}
-public struct BoidSettingsData
-{
-    // Settings
-    public float minSpeed;
-    public float maxSpeed;
-    public float maxSteerForce;
-
-    public float alignWeight;
-    public float cohesionWeight;
-    public float seperateWeight;
-
-    public float maxSteeringForce;
-    public float steerSpeed;
-    public float avoidCollisionWeight;
-}

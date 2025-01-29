@@ -56,8 +56,6 @@ public class BoidManager : MonoBehaviour
 
         for (int i = 0; i < numBoids; i++)
         {
-            bool hasChangedOtherGlobalDir = false;
-            List<int> changedDirIndex = new List<int>();
             if (canSteer)
             {
                 float groupDirJitter = boids[i].wanderJitter;
@@ -81,19 +79,6 @@ public class BoidManager : MonoBehaviour
                             if (otherBoid.globalDir != Vector3.zero)
                             {
                                 boidData[i].globalDir = otherBoid.globalDir;
-                                if (hasChangedOtherGlobalDir)
-                                {
-                                    foreach (var index in changedDirIndex)
-                                    {
-                                        boidData[index].globalDir = boidData[i].globalDir;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                hasChangedOtherGlobalDir = true;
-                                otherBoid.globalDir = boidData[i].globalDir;
-                                changedDirIndex.Add(j);
                             }
                         }                      
 
