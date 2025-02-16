@@ -19,9 +19,6 @@ public class BoidsManagerJobs : MonoBehaviour
     NativeArray<BoidConstantData> boidConstantData;
     BoidSettingsData boidSettingsData;
 
-    NativeArray<uint> seeds;
-    NativeArray<int> changedData;
-
     UpdateBoidsJob updateBoids;
     CheckBoidsForJob checkBoidsJob;
 
@@ -29,15 +26,13 @@ public class BoidsManagerJobs : MonoBehaviour
     {
         boids = new List<Transform>();
         boidConstantData = new NativeArray<BoidConstantData>(spawnCount, Allocator.Persistent);
-        seeds = new NativeArray<uint>(spawnCount, Allocator.Persistent);
-        changedData = new NativeArray<int>(spawnCount, Allocator.Persistent);
 
         float startSpeed = (boidSettings.minSpeed + boidSettings.maxSpeed) / 2;
 
         for (int i = 0; i < spawnCount; i++)
         {
             float3 pos = transform.position + UnityEngine.Random.insideUnitSphere * spawnRadius;
-            GameObject boid = Instantiate(prefab,(Vector3)pos,quaternion.identity);
+            GameObject boid = Instantiate(prefab, (Vector3)pos, quaternion.identity);
             float3 forward = UnityEngine.Random.insideUnitSphere;
             boid.transform.forward = (math.normalize(forward));
             boids.Add(boid.transform);
@@ -65,26 +60,10 @@ public class BoidsManagerJobs : MonoBehaviour
             steerSpeed = boidSettings.steerSpeed,
             avoidCollisionWeight = boidSettings.avoidCollisionWeight
         };
-
-        checkBoidsJob = new CheckBoidsForJob()
-        {
-            numBoids = spawnCount,
-            wanderJitter = boidSettings.wanderJitter,
-            perceptionRadius = boidSettings.perceptionRadius,
-            avoidanceRadius = boidSettings.avoidanceRadius,
-            boidConstantData = boidConstantData
-        };
-        updateBoids = new UpdateBoidsJob()
-        {
-            boidConstantData = boidConstantData,
-            boidSettingsData = boidSettingsData
-        };
     }
     private void OnDisable()
     {
         boidConstantData.Dispose();
-        seeds.Dispose();
-        changedData.Dispose();
     }
     void Update()
     {
@@ -99,8 +78,6 @@ public class BoidsManagerJobs : MonoBehaviour
             timer = 0;
         }
         timer += Time.deltaTime;
-
-
 
         for (int i = 0; i < spawnCount; i++)
         {
@@ -119,9 +96,6 @@ public class BoidsManagerJobs : MonoBehaviour
             {
                 currentBoidConstantData.globalDirConstant = float3.zero;
             }
-
-            seeds[i] = (uint)UnityEngine.Random.Range(1, 100000);
-
             if (IsHeadingForCollision(boidConstantData[i]))
             {
                 currentBoidConstantData.collisionAvoidDir = ObstacleRays(boids[i], currentBoidConstantData);
@@ -131,17 +105,32 @@ public class BoidsManagerJobs : MonoBehaviour
             {
                 currentBoidConstantData.hasFoundCollision = false;
             }
+
             boidConstantData[i] = currentBoidConstantData;
         }
+
         uint seed = (uint)UnityEngine.Random.Range(1, 100000);
 
 
-        checkBoidsJob.boidData = boidData;
-        checkBoidsJob.canSteer = canSteer;
-        checkBoidsJob.seed = seed;
+        checkBoidsJob = new CheckBoidsForJob()
+        {
+            numBoids = spawnCount,
+            wanderJitter = boidSettings.wanderJitter,
+            perceptionRadius = boidSettings.perceptionRadius,
+            avoidanceRadius = boidSettings.avoidanceRadius,
+            boidConstantData = boidConstantData,
+            boidData = boidData,
+            canSteer = canSteer,
+            seed = seed,
+        };
         checkBoidsJob.Schedule(spawnCount, 64).Complete();
 
-        updateBoids.deltaTime = Time.deltaTime;
+        updateBoids = new UpdateBoidsJob()
+        {
+            boidConstantData = boidConstantData,
+            boidSettingsData = boidSettingsData,
+            deltaTime = Time.deltaTime
+        };
         updateBoids.Schedule(spawnCount, 64).Complete();
 
         boidData.Dispose();
@@ -159,7 +148,7 @@ public class BoidsManagerJobs : MonoBehaviour
 
     float3 ObstacleRays(Transform boidTransform, BoidConstantData currentBoid)
     {
-        Vector3[] rayDirections = BoidHelper.directions;
+        Vector3[] rayDirections = RayCastDirections.directions;
 
         for (int i = 0; i < rayDirections.Length; i++)
         {
@@ -272,7 +261,7 @@ struct UpdateBoidsJob : IJobParallelFor
             if (currentBoid.avgSeparationDirection.x != 0 && currentBoid.avgSeparationDirection.y != 0 && currentBoid.avgSeparationDirection.z != 0)
             {
                 seperationForce = SteerTowards(currentBoid.avgSeparationDirection, boidSettingsData.maxSpeed, currentBoid) * boidSettingsData.seperateWeight;
-            }           
+            }
             acceleration += alignmentForce;
             acceleration += cohesionForce;
             acceleration += seperationForce;
@@ -300,19 +289,15 @@ struct UpdateBoidsJob : IJobParallelFor
     float3 SteerTowards(float3 vector, float speed, BoidConstantData currentBoid)
     {
         float3 v = math.normalize(vector) * speed - currentBoid.velocity;
-        //return math.clamp(v, float3.zero, new float3(boidSettingsData.maxSteerForce, boidSettingsData.maxSteerForce, boidSettingsData.maxSteerForce));
         return ClampMagnitude(v, boidSettingsData.maxSteerForce);
     }
-    private float3 ClampMagnitude(float3 v,  float maxMagnitude)
+    private float3 ClampMagnitude(float3 v, float maxMagnitude)
     {
-        float magnitude = math.length(v); // Magnitud del vector
-
+        float magnitude = math.length(v);
         if (magnitude > maxMagnitude)
         {
-            return v / magnitude * maxMagnitude; // Normaliza y escala al máximo permitido
+            return v / magnitude * maxMagnitude;
         }
-
-        return v; // Devuelve el vector sin cambios si está dentro del rango
+        return v;
     }
 }
-

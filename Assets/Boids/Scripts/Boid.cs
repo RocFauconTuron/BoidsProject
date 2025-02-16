@@ -54,6 +54,7 @@ public class Boid : MonoBehaviour
     // Cached
     Transform cachedTransform;
 
+    public collide collided;
 
     void Awake()
     {
@@ -76,8 +77,8 @@ public class Boid : MonoBehaviour
         if (numPerceivedFlockmates != 0)
         {
             centreOfFlockmates /= numPerceivedFlockmates;
-
             Vector3 offsetToFlockmatesCentre = (centreOfFlockmates - position);
+
             var alignmentForce = SteerTowards(avgFlockDirection, maxSpeed) * alignWeight;
             var cohesionForce = SteerTowards(offsetToFlockmatesCentre, maxSpeed) * cohesionWeight;
             var seperationForce = SteerTowards(avgSeparationDirection, maxSpeed) * seperateWeight;
@@ -86,7 +87,6 @@ public class Boid : MonoBehaviour
             acceleration += alignmentForce;
             acceleration += cohesionForce;
             acceleration += seperationForce;
-
         }
         var globalDirForce = SteerTowards(globalDirConstant, steerSpeed) * maxSteeringForce;
         acceleration += globalDirForce;
@@ -94,7 +94,7 @@ public class Boid : MonoBehaviour
         if (IsHeadingForCollision())
         {
             Vector3 collisionAvoidDir = ObstacleRays();
-            Vector3 collisionAvoidForce = SteerTowards(collisionAvoidDir,maxSpeed) * avoidCollisionWeight;
+            Vector3 collisionAvoidForce = SteerTowards(collisionAvoidDir, maxSpeed) * avoidCollisionWeight;
             acceleration += collisionAvoidForce;
         }
 
@@ -118,13 +118,12 @@ public class Boid : MonoBehaviour
         {
             return true;
         }
-        else { }
         return false;
     }
 
     Vector3 ObstacleRays()
     {
-        Vector3[] rayDirections = BoidHelper.directions;
+        Vector3[] rayDirections = RayCastDirections.directions;
 
         for (int i = 0; i < rayDirections.Length; i++)
         {
@@ -144,5 +143,4 @@ public class Boid : MonoBehaviour
         Vector3 v = vector.normalized * speed - velocity;
         return Vector3.ClampMagnitude(v, maxSteerForce);
     }
-
 }

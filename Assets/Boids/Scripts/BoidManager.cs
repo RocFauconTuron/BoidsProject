@@ -10,6 +10,7 @@ public class BoidManager : MonoBehaviour
     bool doneSpawning = false;
     float timer = 0;
 
+    public Vector3 bounds;
     void Awake()
     {
         boids = new List<Boid>();
@@ -32,9 +33,8 @@ public class BoidManager : MonoBehaviour
 
         int numBoids = boids.Count;
         BoidData[] boidData = new BoidData[numBoids];
-
-
         bool canSteer = false;
+
 
         if (timer > Random.Range(boids[0].timeMinWander, boids[0].timeMaxWander))
         {
@@ -42,6 +42,7 @@ public class BoidManager : MonoBehaviour
             timer = 0;
         }
         timer += Time.deltaTime;
+
 
         for (int i = 0; i < numBoids; i++)
         {
@@ -52,7 +53,6 @@ public class BoidManager : MonoBehaviour
                 boids[i].globalDirConstant = Vector3.zero;               
             }
         }
-       
 
         for (int i = 0; i < numBoids; i++)
         {
@@ -84,7 +84,7 @@ public class BoidManager : MonoBehaviour
 
                         if (awayFromNeighbor.magnitude < boids[i].avoidanceRadius * boids[i].avoidanceRadius)
                         {
-                            boidData[i].flockSeparation -= awayFromNeighbor / awayFromNeighbor.magnitude;
+                            boidData[i].flockSeparation -= awayFromNeighbor.normalized;                    
                         }
                     }
                 }
@@ -103,8 +103,50 @@ public class BoidManager : MonoBehaviour
                 boids[i].globalDirConstant = boidData[i].globalDir;
             }
             boids[i].UpdateBoid();
-        }
+            //if (boids[i].transform.position.x > bounds.x)
+            //{
+            //    boids[i].transform.position = new Vector3(-bounds.x, boids[i].position.y, boids[i].position.z);
+            //}
+            //if (boids[i].transform.position.y > bounds.y)
+            //{
+            //    boids[i].transform.position = new Vector3(boids[i].position.x, -bounds.y, boids[i].position.z);
+            //}
+            //if (boids[i].transform.position.z > bounds.z)
+            //{
+            //    boids[i].transform.position = new Vector3(boids[i].position.x, boids[i].position.y, -bounds.z);
+            //}
+
+
+            //if (boids[i].transform.position.x < -bounds.x)
+            //{
+            //    boids[i].transform.position = new Vector3(bounds.x, boids[i].position.y, boids[i].position.z);
+            //}
+            //if (boids[i].transform.position.y < -bounds.y)
+            //{
+            //    boids[i].transform.position = new Vector3(boids[i].position.x, bounds.y, boids[i].position.z);
+            //}
+            //if (boids[i].transform.position.z < -bounds.z)
+            //{
+            //    boids[i].transform.position = new Vector3(boids[i].position.x, boids[i].position.y, bounds.z);
+            //}
+            //boids[i].position = boids[i].transform.position;
+        }         
+        
     }
+
+    //void OnDrawGizmos()
+    //{
+    //    // Dibujar la esfera
+    //    Gizmos.color = new Color(0, 1, 0, 0.2f);
+    //    Gizmos.DrawSphere(pos, boids[0].avoidanceRadius * boids[0].avoidanceRadius);
+
+    //    // Dibujar las líneas
+    //    Gizmos.color = Color.red;
+    //    for (int i = 0; i < neightBorpos.Count; i++)
+    //    {
+    //        Gizmos.DrawLine(pos, neightBorpos[i]);
+    //    }
+    //}
 
     public struct BoidData 
     {

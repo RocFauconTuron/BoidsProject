@@ -155,13 +155,14 @@ public class BoidsManagerJobsGPU : MonoBehaviour
             cellSize = cellSize,
             hashAndIndices = hashAndIndices
         };
-        hashJob.Schedule(spawnCount, 64).Complete();
+      
+        JobHandle hashJobHandle = hashJob.Schedule(spawnCount, 64);
 
         SortHashCodesJob sortJob = new SortHashCodesJob
         {
             hashAndIndices = hashAndIndices
         };
-        sortJob.Schedule().Complete();
+        JobHandle sortJobHandle = sortJob.Schedule(hashJobHandle);
 
         var queryJob = new QueryJob
         {
@@ -175,11 +176,12 @@ public class BoidsManagerJobsGPU : MonoBehaviour
             seed = seed,
             boidConstantData = boidConstantData
         };
-        queryJob.Schedule(spawnCount, 64).Complete();
+        JobHandle queryJobHandle = queryJob.Schedule(spawnCount, 64, sortJobHandle);
 
         updateBoids.deltaTime = Time.deltaTime;
-        updateBoids.Schedule(spawnCount, 64).Complete();
-        Graphics.RenderMeshInstanced(_rp, mesh, 0, _nativeMatrices);
+        updateBoids.Schedule(spawnCount, 64, queryJobHandle).Complete();
+
+        Graphics.DrawMeshInstanced(mesh, 0, mat, _nativeMatrices.ToArray(), _nativeMatrices.Length, null, UnityEngine.Rendering.ShadowCastingMode.On, true);
 
         boidData.Dispose();
     }
@@ -196,7 +198,7 @@ public class BoidsManagerJobsGPU : MonoBehaviour
 
     float3 ObstacleRays(BoidConstantData currentBoid)
     {
-        Vector3[] rayDirections = BoidHelper.directions;
+        Vector3[] rayDirections = RayCastDirections.directions;
 
         for (int i = 0; i < rayDirections.Length; i++)
         {

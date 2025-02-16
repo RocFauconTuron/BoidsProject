@@ -2,14 +2,14 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public static class BoidHelper {
+public static class RayCastDirections {
 
     const int numViewDirections = 300;
-    public static readonly Vector3[] directions;
+    public static Vector3[] directions;
 
-    static BoidHelper () 
+    static RayCastDirections() 
     {
-        directions = new Vector3[BoidHelper.numViewDirections];
+        directions = new Vector3[RayCastDirections.numViewDirections];
 
         float goldenRatio = (1 + Mathf.Sqrt (5)) / 2;
         float angleIncrement = Mathf.PI * 2 * goldenRatio;
@@ -26,5 +26,4 @@ public static class BoidHelper {
             directions[i] = new Vector3 (x, y, z);
         }
     }
-
 }
