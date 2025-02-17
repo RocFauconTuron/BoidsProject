@@ -53,14 +53,6 @@ public class BoidsManagerJobsGPU : MonoBehaviour
             currentBoidConstantData.position = pos;
             currentBoidConstantData.forward = forward;
             currentBoidConstantData.velocity = forward * startSpeed;
-            currentBoidConstantData.avgFlockDirection = float3.zero;
-            currentBoidConstantData.avgSeparationDirection = float3.zero;
-            currentBoidConstantData.centreOfFlockmates = float3.zero;
-            currentBoidConstantData.numPerceivedFlockmates = 0;
-            currentBoidConstantData.globalDirConstant = float3.zero;
-            currentBoidConstantData.collisionAvoidDir = float3.zero;
-            currentBoidConstantData.hasFoundCollision = false;
-            currentBoidConstantData.rotation = quaternion.identity;
 
             boidConstantData[i] = currentBoidConstantData;
         }
@@ -75,18 +67,9 @@ public class BoidsManagerJobsGPU : MonoBehaviour
             alignWeight = boidSettings.alignWeight,
             cohesionWeight = boidSettings.cohesionWeight,
             seperateWeight = boidSettings.seperateWeight,
-            maxSteeringForce = boidSettings.maxSteeringForce,
+            wanderWeight = boidSettings.wanderWeight,
             steerSpeed = boidSettings.steerSpeed,
             avoidCollisionWeight = boidSettings.avoidCollisionWeight
-        };
-
-        updateBoids = new UpdateBoidsJobGPU
-        {
-            boidConstantData = boidConstantData,
-            boidSettingsData = boidSettingsData,
-            Matrices = _nativeMatrices,
-            scale = scale,
-            angle = angle
         };
 
         float goldenRatio = (1 + Mathf.Sqrt(5)) / 2;
@@ -149,13 +132,12 @@ public class BoidsManagerJobsGPU : MonoBehaviour
 
 
 
-        HashParticlesJob hashJob = new HashParticlesJob
+        GetBoidInHashJob hashJob = new GetBoidInHashJob
         {
             boids = boidConstantData,
             cellSize = cellSize,
             hashAndIndices = hashAndIndices
-        };
-      
+        };      
         JobHandle hashJobHandle = hashJob.Schedule(spawnCount, 64);
 
         SortHashCodesJob sortJob = new SortHashCodesJob
@@ -178,7 +160,15 @@ public class BoidsManagerJobsGPU : MonoBehaviour
         };
         JobHandle queryJobHandle = queryJob.Schedule(spawnCount, 64, sortJobHandle);
 
-        updateBoids.deltaTime = Time.deltaTime;
+        updateBoids = new UpdateBoidsJobGPU
+        {
+            boidConstantData = boidConstantData,
+            boidSettingsData = boidSettingsData,
+            Matrices = _nativeMatrices,
+            scale = scale,
+            angle = angle,
+            deltaTime = Time.deltaTime
+            };
         updateBoids.Schedule(spawnCount, 64, queryJobHandle).Complete();
 
         Graphics.DrawMeshInstanced(mesh, 0, mat, _nativeMatrices.ToArray(), _nativeMatrices.Length, null, UnityEngine.Rendering.ShadowCastingMode.On, true);
@@ -319,7 +309,7 @@ struct UpdateBoidsJobGPU : IJobParallelFor
             acceleration += cohesionForce;
             acceleration += seperationForce;
         }
-        float3 globalDirForce = SteerTowards(currentBoid.globalDirConstant, boidSettingsData.steerSpeed, currentBoid) * boidSettingsData.maxSteeringForce;
+        float3 globalDirForce = SteerTowards(currentBoid.globalDirConstant, boidSettingsData.steerSpeed, currentBoid) * boidSettingsData.wanderWeight;
         acceleration += globalDirForce;
 
         if (currentBoid.hasFoundCollision)
@@ -365,7 +355,7 @@ struct UpdateBoidsJobGPU : IJobParallelFor
 }
 
 [BurstCompile]
-struct HashParticlesJob : IJobParallelFor
+struct GetBoidInHashJob : IJobParallelFor
 {
     [ReadOnly] public NativeArray<BoidConstantData> boids;
     [ReadOnly] public float cellSize;

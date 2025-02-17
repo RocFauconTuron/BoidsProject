@@ -139,7 +139,7 @@ MonoBehaviour:
   alignWeight: 2
   cohesionWeight: 1
   seperateWeight: 2.5
-  maxSteeringForce: 7
+  wanderWeight: 7
   wanderJitter: 1
   timeMinWander: 1
   timeMaxWander: 4
@@ -159,4 +159,3 @@ MonoBehaviour:
   centreOfFlockmates: {x: 0, y: 0, z: 0}
   numPerceivedFlockmates: 0
   globalDirConstant: {x: 0, y: 0, z: 0}
-  collided: {fileID: 0}

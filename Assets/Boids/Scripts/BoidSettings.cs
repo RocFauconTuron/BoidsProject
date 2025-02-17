@@ -15,7 +15,7 @@ public class BoidSettings : ScriptableObject {
     public float cohesionWeight = 1;
     public float seperateWeight = 1;
 
-    public float maxSteeringForce = 1f;
+    public float wanderWeight = 1f;
     public float wanderJitter = 0.2f;
     public float timeMinWander = 1;
     public float timeMaxWander = 5;

@@ -37,7 +37,6 @@ public class CameraController : MonoBehaviour
         
     }
 
-
     void Update()
     {
         if (Input.GetMouseButton(1))

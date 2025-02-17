@@ -36,8 +36,8 @@ public struct BoidSettingsData
     public float alignWeight;
     public float cohesionWeight;
     public float seperateWeight;
+    public float wanderWeight;
 
-    public float maxSteeringForce;
     public float steerSpeed;
     public float avoidCollisionWeight;
 }

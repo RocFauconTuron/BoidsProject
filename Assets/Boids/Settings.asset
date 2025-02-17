@@ -20,10 +20,10 @@ MonoBehaviour:
   alignWeight: 2
   cohesionWeight: 1
   seperateWeight: 2.5
-  maxSteeringForce: 7
+  wanderWeight: 1
   wanderJitter: 1
-  timeMinWander: 2
-  timeMaxWander: 5
+  timeMinWander: 1
+  timeMaxWander: 4
   steerSpeed: 0.2
   obstacleMask:
     serializedVersion: 2

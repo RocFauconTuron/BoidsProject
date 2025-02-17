@@ -4,7 +4,7 @@ using UnityEngine;
 
 public class Boid : MonoBehaviour 
 {
-    // Settings
+
     public float minSpeed = 2;
     public float maxSpeed = 5;
     public float perceptionRadius = 2.5f;
@@ -15,20 +15,18 @@ public class Boid : MonoBehaviour
     public float cohesionWeight = 1;
     public float seperateWeight = 1;
 
-    public float maxSteeringForce = 1f; // Fuerza máxima de dirección
+    public float wanderWeight = 1f; // Fuerza máxima de dirección
     public float wanderJitter = 0.2f; // Cantidad de variación aleatoria por frame
     public float timeMinWander = 1;
     public float timeMaxWander = 5;
     public float steerSpeed = 2;
 
-    [Header("Collisions")]
     public LayerMask obstacleMask;
     public float boundsRadius = .27f;
     public float avoidCollisionWeight = 10;
     public float collisionAvoidDst = 5;
 
     public Vector3 collisiondir;
-
     public Vector3 accelerationPublic;
 
     // State
@@ -53,8 +51,6 @@ public class Boid : MonoBehaviour
 
     // Cached
     Transform cachedTransform;
-
-    public collide collided;
 
     void Awake()
     {
@@ -88,7 +84,7 @@ public class Boid : MonoBehaviour
             acceleration += cohesionForce;
             acceleration += seperationForce;
         }
-        var globalDirForce = SteerTowards(globalDirConstant, steerSpeed) * maxSteeringForce;
+        var globalDirForce = SteerTowards(globalDirConstant, steerSpeed) * wanderWeight;
         acceleration += globalDirForce;
 
         if (IsHeadingForCollision())

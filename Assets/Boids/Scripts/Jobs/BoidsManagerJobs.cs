@@ -56,7 +56,7 @@ public class BoidsManagerJobs : MonoBehaviour
             alignWeight = boidSettings.alignWeight,
             cohesionWeight = boidSettings.cohesionWeight,
             seperateWeight = boidSettings.seperateWeight,
-            maxSteeringForce = boidSettings.maxSteeringForce,
+            wanderWeight = boidSettings.wanderWeight,
             steerSpeed = boidSettings.steerSpeed,
             avoidCollisionWeight = boidSettings.avoidCollisionWeight
         };
@@ -266,7 +266,7 @@ struct UpdateBoidsJob : IJobParallelFor
             acceleration += cohesionForce;
             acceleration += seperationForce;
         }
-        float3 globalDirForce = SteerTowards(currentBoid.globalDirConstant, boidSettingsData.steerSpeed, currentBoid) * boidSettingsData.maxSteeringForce;
+        float3 globalDirForce = SteerTowards(currentBoid.globalDirConstant, boidSettingsData.steerSpeed, currentBoid) * boidSettingsData.wanderWeight;
         acceleration += globalDirForce;
 
         if (currentBoid.hasFoundCollision)
