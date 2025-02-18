@@ -14,7 +14,6 @@ public class CameraController : MonoBehaviour
     Vector3 smoothVel = Vector3.zero;
     [SerializeField] float smoothTimeRot;
     [SerializeField] float smoothTimeMove;
-    Camera camera;
 
     [SerializeField] float minZoom;
     [SerializeField] float maxZoom;
@@ -29,7 +28,6 @@ public class CameraController : MonoBehaviour
         rotY = targetRotate.localEulerAngles.x;
         posX = targetRotate.position.x;
         posY = targetRotate.position.z;
-        camera = GetComponent<Camera>();
     }
     // Start is called before the first frame update
     void Start()

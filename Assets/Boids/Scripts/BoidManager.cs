@@ -11,6 +11,9 @@ public class BoidManager : MonoBehaviour
     float timer = 0;
 
     public Vector3 bounds;
+    public Transform level;
+    Vector3 worldBoundsPositive;
+    Vector3 worldBoundsNegative;
     void Awake()
     {
         boids = new List<Boid>();
@@ -25,6 +28,8 @@ public class BoidManager : MonoBehaviour
         }
         timer = 100000;
         doneSpawning = true;
+        worldBoundsPositive = level.position + bounds;
+        worldBoundsNegative = level.position - bounds;
     }
 
     void Update () 
@@ -103,51 +108,39 @@ public class BoidManager : MonoBehaviour
                 boids[i].globalDirConstant = boidData[i].globalDir;
             }
             boids[i].UpdateBoid();
-            //if (boids[i].transform.position.x > bounds.x)
+
+
+            // codigo para teletransportar el boid cuando sale del los limites bounds---------------------------
+            //if (boids[i].transform.position.x > worldBoundsPositive.x)
             //{
-            //    boids[i].transform.position = new Vector3(-bounds.x, boids[i].position.y, boids[i].position.z);
+            //    boids[i].transform.position = new Vector3(worldBoundsNegative.x, boids[i].position.y, boids[i].position.z);
             //}
-            //if (boids[i].transform.position.y > bounds.y)
+            //if (boids[i].transform.position.y > worldBoundsPositive.y)
             //{
-            //    boids[i].transform.position = new Vector3(boids[i].position.x, -bounds.y, boids[i].position.z);
+            //    boids[i].transform.position = new Vector3(boids[i].position.x, worldBoundsNegative.y, boids[i].position.z);
             //}
-            //if (boids[i].transform.position.z > bounds.z)
+            //if (boids[i].transform.position.z > worldBoundsPositive.z)
             //{
-            //    boids[i].transform.position = new Vector3(boids[i].position.x, boids[i].position.y, -bounds.z);
+            //    boids[i].transform.position = new Vector3(boids[i].position.x, boids[i].position.y, worldBoundsNegative.z);
             //}
 
 
-            //if (boids[i].transform.position.x < -bounds.x)
+            //if (boids[i].transform.position.x < worldBoundsNegative.x)
             //{
-            //    boids[i].transform.position = new Vector3(bounds.x, boids[i].position.y, boids[i].position.z);
+            //    boids[i].transform.position = new Vector3(worldBoundsPositive.x, boids[i].position.y, boids[i].position.z);
             //}
-            //if (boids[i].transform.position.y < -bounds.y)
+            //if (boids[i].transform.position.y < worldBoundsNegative.y)
             //{
-            //    boids[i].transform.position = new Vector3(boids[i].position.x, bounds.y, boids[i].position.z);
+            //    boids[i].transform.position = new Vector3(boids[i].position.x, worldBoundsPositive.y, boids[i].position.z);
             //}
-            //if (boids[i].transform.position.z < -bounds.z)
+            //if (boids[i].transform.position.z < worldBoundsNegative.z)
             //{
-            //    boids[i].transform.position = new Vector3(boids[i].position.x, boids[i].position.y, bounds.z);
+            //    boids[i].transform.position = new Vector3(boids[i].position.x, boids[i].position.y, worldBoundsPositive.z);
             //}
             //boids[i].position = boids[i].transform.position;
-        }         
-        
+        }
+
     }
-
-    //void OnDrawGizmos()
-    //{
-    //    // Dibujar la esfera
-    //    Gizmos.color = new Color(0, 1, 0, 0.2f);
-    //    Gizmos.DrawSphere(pos, boids[0].avoidanceRadius * boids[0].avoidanceRadius);
-
-    //    // Dibujar las líneas
-    //    Gizmos.color = Color.red;
-    //    for (int i = 0; i < neightBorpos.Count; i++)
-    //    {
-    //        Gizmos.DrawLine(pos, neightBorpos[i]);
-    //    }
-    //}
-
     public struct BoidData 
     {
         public Vector3 position;
